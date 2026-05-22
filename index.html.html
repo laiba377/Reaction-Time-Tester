@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Reaction Time Tester</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --red:    #E8372A;
+      --green:  #2DB566;
+      --dark:   #0D0D0D;
+      --light:  #F4F0E8;
+      --accent: #FFD447;
+      --card:   #1A1A1A;
+      --muted:  #555;
+      --radius: 16px;
+      --mono: 'Space Mono', monospace;
+      --display: 'Syne', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--dark);
+      color: var(--light);
+      font-family: var(--display);
+      overflow: hidden;
+    }
+
+    /* ── Arena (full screen clickable zone) ── */
+    #arena {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease;
+      background: var(--dark);
+      cursor: default;
+    }
+
+    #arena.waiting { background: var(--red); cursor: not-allowed; }
+    #arena.go      { background: var(--green); cursor: pointer; animation: pulse 0.7s ease-in-out infinite; }
+    #arena.toosoon { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { filter: brightness(1); }
+      50%       { filter: brightness(1.15); }
+    }
+
+    /* ── Ripple ── */
+    .ripple {
+      position: fixed;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+      transform: scale(0);
+      animation: ripple 0.7s ease-out forwards;
+      pointer-events: none;
+    }
+    @keyframes ripple {
+      to { transform: scale(6); opacity: 0; }
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--card);
+      border: 1px solid #2a2a2a;
+      border-radius: var(--radius);
+      padding: 2.5rem 2rem;
+      width: 360px;
+      text-align: center;
+      position: relative;
+      z-index: 10;
+      animation: slideUp 0.35s cubic-bezier(.22,1,.36,1);
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .card .icon { font-size: 40px; margin-bottom: 1rem; display: block; line-height: 1; }
+
+    .card h1 {
+      font-family: var(--display);
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--light);
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.5px;
+    }
+
+    .card p {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 1.75rem;
+    }
+    .card p strong { color: var(--accent); font-weight: 700; }
+
+    /* stats row */
+    .stats {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 1.5rem;
+    }
+    .stat {
+      flex: 1;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 10px;
+      padding: 0.75rem 0.5rem;
+    }
+    .stat-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }
+    .stat-val {
+      font-family: var(--mono);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--light);
+    }
+    .stat-val.highlight { color: var(--accent); }
+
+    /* buttons */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 10px;
+      border: 1px solid #333;
+      background: var(--light);
+      color: var(--dark);
+      cursor: pointer;
+      letter-spacing: 0.05em;
+      transition: transform 0.1s, opacity 0.15s;
+      margin-bottom: 8px;
+    }
+    .btn:hover   { opacity: 0.88; }
+    .btn:active  { transform: scale(0.97); }
+    .btn.ghost {
+      background: transparent;
+      color: var(--muted);
+      border-color: #2a2a2a;
+      font-size: 12px;
+    }
+    .btn.ghost:hover { color: var(--light); border-color: #444; }
+
+    /* ── Overlay text (waiting / go / toosoon) ── */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      z-index: 20;
+      pointer-events: none;
+    }
+    #overlay.visible { display: flex; }
+
+    #overlay .ov-title {
+      font-family: var(--display);
+      font-size: clamp(36px, 8vw, 72px);
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -2px;
+      animation: fadeIn 0.2s ease;
+    }
+    #overlay .ov-sub {
+      font-family: var(--mono);
+      font-size: 16px;
+      color: rgba(255,255,255,0.65);
+      margin-top: 0.5rem;
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.92); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
+    /* dots */
+    .dots { display: flex; gap: 10px; margin-top: 1.5rem; }
+    .dots span {
+      width: 12px; height: 12px;
+      background: rgba(255,255,255,0.5);
+      border-radius: 50%;
+      animation: dotBounce 1.2s ease-in-out infinite;
+    }
+    .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotBounce {
+      0%,80%,100% { transform: scale(0.6); opacity: 0.4; }
+      40%          { transform: scale(1.1); opacity: 1; }
+    }
+
+    /* big reaction time display */
+    #big-time {
+      font-family: var(--mono);
+      font-size: clamp(48px, 12vw, 96px);
+      font-weight: 700;
+      color: var(--light);
+      letter-spacing: -3px;
+      margin: 0.25rem 0;
+    }
+    #big-time span { font-size: 0.4em; color: var(--muted); letter-spacing: 0; }
+
+    /* badge */
+    .badge {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 99px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+    }
+    .badge.good  { background: #1a3d27; color: #2DB566; }
+    .badge.ok    { background: #1a2a3d; color: #6ab0f5; }
+    .badge.slow  { background: #3d1a1a; color: #e07070; }
+  </style>
+</head>
+<body>
+
+<!-- Full-screen clickable arena -->
+<div id="arena"></div>
+
+<!-- Overlay messages (waiting / go / too soon) -->
+<div id="overlay">
+  <div id="ov-content"></div>
+</div>
+
+<!-- Cards (idle / result) rendered inside arena center -->
+<div id="ui-root" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:30;pointer-events:none;"></div>
+
+<script>
+  /* ── State ── */
+  let state = 'idle';   // idle | waiting | go | toosoon | result
+  let waitTimer = null;
+  let goTime = null;
+  let bestTime = null;
+  let lastTime = null;
+  let attempts = 0;
+
+  const arena   = document.getElementById('arena');
+  const overlay = document.getElementById('overlay');
+  const ovCont  = document.getElementById('ov-content');
+  const uiRoot  = document.getElementById('ui-root');
+
+  /* ── Helpers ── */
+  function ms(n) { return n + ' ms'; }
+
+  function rating(t) {
+    if (t < 180) return { text: 'Superhuman — are you even human?', cls: 'good' };
+    if (t < 250) return { text: 'Lightning fast — top 5%!',         cls: 'good' };
+    if (t < 320) return { text: 'Excellent reaction time!',          cls: 'ok'   };
+    if (t < 420) return { text: 'Pretty solid — keep it up!',        cls: 'ok'   };
+    if (t < 550) return { text: 'Room to improve — try again!',      cls: 'slow' };
+    return               { text: 'Stay focused and try again.',       cls: 'slow' };
+  }
+
+  function spawnRipple(e) {
+    const r = document.createElement('div');
+    r.className = 'ripple';
+    const x = e.clientX, y = e.clientY;
+    const size = Math.max(window.innerWidth, window.innerHeight);
+    r.style.cssText = `width:${size}px;height:${size}px;left:${x - size/2}px;top:${y - size/2}px;`;
+    document.body.appendChild(r);
+    r.addEventListener('animationend', () => r.remove());
+  }
+
+  /* ── Render ── */
+  function render() {
+    // Arena class
+    arena.className = ['waiting','go','toosoon'].includes(state) ? state : '';
+
+    // Overlay
+    if (state === 'waiting') {
+      overlay.className = 'visible';
+      ovCont.innerHTML = `
+        <div class="ov-title">Wait…</div>
+        <div class="ov-sub">Don't click yet!</div>
+        <div class="dots"><span></span><span></span><span></span></div>`;
+    } else if (state === 'go') {
+      overlay.className = 'visible';
+      ovCont.innerHTML = `
+        <div class="ov-title">CLICK!</div>
+        <div class="ov-sub">As fast as you can!</div>`;
+    } else if (state === 'toosoon') {
+      overlay.className = 'visible';
+      ovCont.innerHTML = `
+        <div class="ov-title">Too soon!</div>
+        <div class="ov-sub">Wait for green before clicking.</div>`;
+    } else {
+      overlay.className = '';
+      ovCont.innerHTML = '';
+    }
+
+    // Card
+    uiRoot.innerHTML = '';
+    if (state === 'idle') {
+      uiRoot.style.pointerEvents = 'auto';
+      const hasStats = bestTime !== null;
+      uiRoot.innerHTML = `
+        <div class="card">
+          <span class="icon">⚡</span>
+          <h1>Reaction Time Tester</h1>
+          <p>Click <strong>Start</strong>, wait for the screen to turn <strong>green</strong>, then click as fast as you can!</p>
+          ${hasStats ? `
+          <div class="stats">
+            <div class="stat"><div class="stat-label">Best</div><div class="stat-val highlight">${ms(bestTime)}</div></div>
+            <div class="stat"><div class="stat-label">Last</div><div class="stat-val">${ms(lastTime)}</div></div>
+            <div class="stat"><div class="stat-label">Tries</div><div class="stat-val">${attempts}</div></div>
+          </div>` : ''}
+          <button class="btn" id="start-btn">START</button>
+          ${hasStats ? `<button class="btn ghost" id="reset-btn">Reset scores</button>` : ''}
+        </div>`;
+      document.getElementById('start-btn').onclick = startTest;
+      const rb = document.getElementById('reset-btn');
+      if (rb) rb.onclick = resetScores;
+    } else if (state === 'result') {
+      uiRoot.style.pointerEvents = 'auto';
+      const { text, cls } = rating(lastTime);
+      uiRoot.innerHTML = `
+        <div class="card">
+          <span class="badge ${cls}">${cls === 'good' ? '🏆 Fast' : cls === 'ok' ? '👍 Good' : '🔁 Try again'}</span>
+          <div id="big-time">${lastTime}<span>ms</span></div>
+          <p style="margin-bottom:1.25rem">${text}</p>
+          <div class="stats">
+            <div class="stat"><div class="stat-label">Best</div><div class="stat-val highlight">${ms(bestTime)}</div></div>
+            <div class="stat"><div class="stat-label">Tries</div><div class="stat-val">${attempts}</div></div>
+          </div>
+          <button class="btn" id="retry-btn">TRY AGAIN</button>
+          <button class="btn ghost" id="reset-btn">Reset scores</button>
+        </div>`;
+      document.getElementById('retry-btn').onclick = () => { state = 'idle'; render(); setTimeout(startTest, 200); };
+      document.getElementById('reset-btn').onclick = resetScores;
+    } else {
+      uiRoot.style.pointerEvents = 'none';
+    }
+  }
+
+  /* ── Actions ── */
+  function startTest() {
+    state = 'waiting';
+    render();
+    const delay = 2000 + Math.random() * 3000;
+    waitTimer = setTimeout(() => {
+      state = 'go';
+      goTime = performance.now();
+      render();
+    }, delay);
+  }
+
+  function resetScores() {
+    bestTime = null; lastTime = null; attempts = 0;
+    state = 'idle'; render();
+  }
+
+  /* ── Arena click ── */
+  arena.addEventListener('click', (e) => {
+    if (state === 'waiting') {
+      clearTimeout(waitTimer);
+      spawnRipple(e);
+      state = 'toosoon';
+      render();
+      setTimeout(() => { state = 'idle'; render(); }, 2200);
+    } else if (state === 'go') {
+      const t = Math.round(performance.now() - goTime);
+      lastTime = t;
+      attempts++;
+      if (bestTime === null || t < bestTime) bestTime = t;
+      spawnRipple(e);
+      state = 'result';
+      render();
+    }
+  });
+
+  /* ── Init ── */
+  render();
+</script>
+</body>
+</html>
